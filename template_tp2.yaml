@@ -1,0 +1,176 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: Template de déploiement d'une instance Ec2 avec un vpc et un groupe de securite
+
+Parameters:
+  EnvironmentName:
+    Description: An environment name that is prefixed to resource names
+    Type: String
+
+  VpcCIDR:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 172.20.0.0/16
+
+  PublicSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
+    Type: String
+    Default: 172.20.10.0/24
+
+  KeyPairName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: 'AWS::EC2::KeyPair::KeyName'  # standard type
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+
+  InstanceType:
+    Description: EC2 instance parameter type
+    Type: String
+    Default: t2.micro
+
+
+  InstanceImageId:
+    Description: Enter AMI-ID for EC2 Instance
+    Type: String
+    Default: ami-00c08ad1a6ca8ca7c
+ 
+
+  BucketName: 
+    Description: Nom du Bucket
+    Type: String
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref Vpc
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Subnet (AZ1)
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Routes
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  TpSg:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: !Ref Vpc
+      GroupDescription: groupe securité tp2
+      GroupName: TpSg
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          FromPort: 22
+          ToPort: 22
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  MyEC2Instance: #An inline comment
+    Type: "AWS::EC2::Instance"
+    Properties: 
+      ImageId: !Ref InstanceImageId
+      SecurityGroupIds:
+        - !Ref TpSg
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref PublicSubnet1
+      KeyName: !Ref KeyPairName
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          yum update -y
+          amazon-linux-extras enable php7.4
+          yum install -y httpd
+          yum install -y mariadb-server
+          yum install -y php-cli php-pdo php-fpm php-json php-mysqlnd
+          sudo service mariadb start
+          sudo service httpd start
+          mysqladmin -u root create blog
+          cd /var/www/html
+          sudo wget http://wordpress.org/latest.tar.gz
+          sudo tar -xzvf latest.tar.gz
+          sudo mv wordpress/* .
+          sudo rm -rf wordpress
+          exit
+      Tags: 
+        - Key: Name
+          Value: tp2-ec2
+        - Key: Application
+          Value:
+           Ref: "AWS::StackName"    
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+
+Outputs:
+  VPC:
+    Description: A reference to the created VPC
+    Value: !Ref Vpc
+
+  PublicSubnets:
+    Description: A list of the public subnets
+    Value: !Join [ ",", [ !Ref PublicSubnet1]]
+
+  PublicSubnet1:
+    Description: A reference to the public subnet in the 1st Availability Zone
+    Value: !Ref PublicSubnet1
+
+  TpSg:
+    Description: Security group with ingress rule
+    Value: !Ref TpSg
+
+  MyEC2Instance:
+    Description: EC2 Instance tp2
+    Value: !Ref MyEC2Instance
+
+  S3Bucket:
+    Description: S3 Bucket tp2
+    Value: !Ref S3Bucket
