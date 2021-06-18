@@ -14,7 +14,7 @@ if [$var = "1"]; then
     echo "Nom de la stack : "
     read stackname
     echo ""
-    echo "Quel fichier json? "
+    echo "Quel fichier json ou yaml? "
     read file
     echo ""
     echo "nom de la keypair : "
@@ -22,7 +22,7 @@ if [$var = "1"]; then
     echo ""
     echo "lancement de la creation de la stack"
     aws cloudformation create-stack  --stack-name $stackname \
-    --template-body file://$file \ #fichier.json
+    --template-body file://$file \ #fichier.json ou .yaml
     --parameters  ParameterKey=KeyPairName,ParameterValue=$sshkey ParameterKey=InstanceType,ParameterValue=t2.micro
 elif [$var = "2"]
 then
